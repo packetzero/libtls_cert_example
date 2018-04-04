@@ -97,7 +97,7 @@ WD9f\n\
 /**
  *
  */
-int httpSend(HttpRequest &request, HttpResponse &response)
+int httpSend(HttpRequest &request, HttpResponse &response, const char *pemBundleString, unsigned int pemBundleLength)
 {
 	struct tls_config *cfg = NULL;
 	struct tls *ctx = NULL;
@@ -123,7 +123,7 @@ int httpSend(HttpRequest &request, HttpResponse &response)
   }
 
 	/* set root certificate (CA) */
-	if (tls_config_set_ca_mem(cfg, (const uint8_t*)pinnedCertsPEM, strlen(pinnedCertsPEM)) != 0) {
+	if (tls_config_set_ca_mem(cfg, (const uint8_t*)pemBundleString, pemBundleLength) != 0) {
 		PERR(("tls_config_set_ca_mem:"));
     return 3;
   }
@@ -177,7 +177,7 @@ int httpSend(HttpRequest &request, HttpResponse &response)
 	size_t readlen;
 	while ((readlen = tls_read(ctx, readbuf, sizeof(readbuf)-1)) > 0) {
 		readbuf[readlen] = 0;
-    
+
     httpReader->onBuffer(readbuf, readlen, sizeof(readbuf));
     if (httpReader->isFinished()) break;
 	}
@@ -193,9 +193,25 @@ int httpSend(HttpRequest &request, HttpResponse &response)
 	return(0);
 }
 
+int read_text_file(const std::string path, std::string &dest)
+{
+  char achLine[2048];
+  FILE* pf = fopen ( path.c_str(), "rt");
+  if ( NULL == pf ) return -1;
+  
+  while ( ! feof ( pf ) ) {
+    char* pstr = fgets ( achLine, sizeof(achLine), pf );
+    if (pstr != NULL)
+      dest.append(pstr);
+  }
+  
+  fclose(pf);
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
-	if (argc < 2) { printf("usage: %s url\n\n", argv[0]); return 1; }
+	if (argc < 2) { printf("usage: %s url <optional/path/to/cabundle.pem>\n\n", argv[0]); return 1; }
 
   const char *url = argv[1];
   HttpRequest request = HttpRequest(url);
@@ -203,11 +219,32 @@ int main(int argc, char *argv[])
     printf("Failed to parse URL:%s\n", url);
     return 2;
   }
+
+  // by default, use pinned certs
+
+  const char *pemBundleString = pinnedCertsPEM;
+  unsigned int pemBundleLength = sizeof(pinnedCertsPEM);
+
+  std::string pemBundleFileContents = std::string();
+  if (argc > 2) {
+
+    // try to load PEM bundle from file
+
+    const char *pem_filename = argv[2];
+    int status = read_text_file(pem_filename, pemBundleFileContents);
+    if (status != 0) {
+      printf("Error reading PEM bundle file at '%s'\n", pem_filename);
+      return 2;
+    }
+    pemBundleString = pemBundleFileContents.c_str();
+    pemBundleLength = pemBundleFileContents.length();
+  }
+
   HttpResponse response = HttpResponse();
 
   request.customHeaders.push_back(HttpHeader("User-Agent",USER_AGENT));
 
-  if (httpSend(request, response)) {
+  if (httpSend(request, response, pemBundleString, pemBundleLength)) {
     printf("request failed\n");
     return 3;
   }
