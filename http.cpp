@@ -1,9 +1,54 @@
 #include <sstream>
 #include <string.h>
 
+#include <openssl/ocsp.h> // OCSP_parse_url
+
 #include "http.h"
 
 void parseHeaders(const std::string &str, size_t &contentLength, std::vector<HttpHeader> &hdrs, int &statusCode);
+
+
+HttpRequest::HttpRequest(const char *purl) : url(purl), host(), portstr(), path(), isHttps(false), method("GET"), postData(), customHeaders()
+{
+//  char tmpurl[1024];
+//  strcpy(tmpurl, argv[1]);  // make a copy since OCSP_parse_url url param is not const
+  char *_host=NULL;
+  char *_portstr=NULL;
+  char *_path=NULL;
+  int _isHttps = 0;
+  
+  if (1 != OCSP_parse_url((char *)url.c_str(), &_host, &_portstr, &_path, &_isHttps)) {
+    //printf("Failed to parse URL:%s\n", url);
+    return;
+  }
+  
+  host = std::string(_host);
+  portstr = std::string(_portstr);
+  path = std::string(_path);
+  isHttps = isHttps != 0;
+}
+
+const std::string HttpRequest::generate()
+{
+  std::string request = method + std::string(" ");
+  request += path;
+  request += " HTTP/1.1\r\n";
+
+  request += "Host: " + std::string(host) + "\r\n";
+
+  for (auto hdr : customHeaders) {
+    request += hdr.name + ": " + hdr.value + "\r\n";
+  }
+
+  request += "Content-Length: ";
+  char tmp[32];
+  sprintf(tmp, "%lu", postData.length());
+  request += tmp;
+  request += "\r\n\r\n";
+  request += postData;
+
+  return request;
+}
 
 class HttpReaderImpl : public HttpReader {
 public:

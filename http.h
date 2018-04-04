@@ -12,6 +12,28 @@ struct HttpHeader {
   HttpHeader(std::string n, std::string v) : name(n), value(v) {}
 };
 
+struct HttpRequest {
+  std::string             url;
+  std::string             host;
+  std::string             portstr;
+  std::string             path;
+  bool                    isHttps;
+
+  std::string             method;   // defaults to GET
+  std::string             postData;
+  std::vector<HttpHeader> customHeaders;
+
+  /*
+   * If unable to parse url, host will be empty string.
+   */
+  HttpRequest(const char *url);
+  
+  /*
+   * returns string with HTTP/1.1 method, headers, body, line break
+   */
+  const std::string  generate();
+};
+
 struct HttpResponse {
   int statusCode;
   std::string body;

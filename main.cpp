@@ -11,9 +11,18 @@
 #include <err.h>
 
 #include <tls.h>
-#include <openssl/ocsp.h> // OCSP_parse_url
 
 #include "http.h"
+
+const char * USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36";
+bool flag_printResponseHeaders = false;
+bool flag_printRequest = false;
+
+#ifndef NDEBUG
+#define PERR(A) warn A ;
+#else
+#define PERR(A)
+#endif
 
 const char pinnedCertsPEM[] =
 // DigiCert Global Root CA (badssl.com)
@@ -60,7 +69,7 @@ PseKUgzbFbS9bZvlxrFUaKnjaZC2mqUPuLk/IH2uSrW4nOQdtqvmlKXBx4Ot2/Un\n\
 hw4EbNX/3aBd7YdStysVAq45pmp06drE57xNNB6pXE0zX5IJL4hmXXeXxx12E6nV\n\
 5fEWCRE11azbJHFwLJhWC9kXtNHjUStedejV0NxPNO3CBWaAocvmMw==\n\
 -----END CERTIFICATE-----\n"
-/*
+/* You can comment out individual entries like this...
 // GlobalSign Root CA (wikipedia.org)
 "-----BEGIN CERTIFICATE-----\n\
 MIIDXzCCAkegAwIBAgILBAAAAAABIVhTCKIwDQYJKoZIhvcNAQELBQAwTDEgMB4G\n\
@@ -82,45 +91,18 @@ jjM5RcOO5LlXbKr8EpbsU8Yt5CRsuZRj+9xTaGdWPoO4zzUhw8lo/s7awlOqzJCK\n\
 mcIfeg7jLQitChws/zyrVQ4PkX4268NXSb7hLi18YIvDQVETI53O9zJrlAGomecs\n\
 Mx86OyXShkDOOyyGeMlhLxS67ttVb9+E7gUJTb0o2HLO02JQZR7rkpeDMdmztcpH\n\
 WD9f\n\
------END CERTIFICATE-----"
+-----END CERTIFICATE-----\n"
 */;
-
-const char * USER_AGENT = "User-Agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36";
-bool flag_printResponseHeaders = true;
-bool flag_printRequest = false;
-
-#ifndef NDEBUG
-#define PERR(A) warn A ;
-#else
-#define PERR(A)
-#endif
 
 /**
  *
  */
-int httpSend(const std::string host, const std::string path, const std::string portstr, const std::string method, const std::string body, HttpResponse &response)
+int httpSend(HttpRequest &request, HttpResponse &response)
 {
 	struct tls_config *cfg = NULL;
 	struct tls *ctx = NULL;
 	ssize_t writelen;
   HttpReader* httpReader = HttpReaderNew(response);
-
-	std::vector<std::string> reqHeaders = std::vector<std::string>();
-
-	reqHeaders.push_back(USER_AGENT);
-	reqHeaders.push_back("Host: " + std::string(host));
-
-	std::string request = method + std::string(" ");
-  request += path;
-  request += " HTTP/1.1\n";
-
-	for (auto hdr : reqHeaders) request += hdr + "\n";
-  request += "Content-Length: ";
-  char tmp[32];
-  sprintf(tmp, "%lu", body.length());
-  request += tmp;
-  request += "\n\n";
-  request += body;
 
 	/*
 	** initialize libtls
@@ -168,7 +150,7 @@ int httpSend(const std::string host, const std::string path, const std::string p
 	** connect to server
 	*/
 
-	if (tls_connect(ctx, host.c_str(), (portstr.length() == 0 ? "443" : portstr.c_str())) != 0) {
+	if (tls_connect(ctx, request.host.c_str(), (request.portstr.length() == 0 ? "443" : request.portstr.c_str())) != 0) {
 		PERR(("tls_connect: %s", tls_error(ctx)));
     return 6;
   }
@@ -177,12 +159,15 @@ int httpSend(const std::string host, const std::string path, const std::string p
 	** send message to server
 	*/
 
-	if((writelen = tls_write(ctx, request.c_str(), request.length())) < 0) {
+  std::string requestStr = request.generate();
+
+  if (flag_printRequest) printf("sending\n%s\n", requestStr.c_str());
+
+  if((writelen = tls_write(ctx, requestStr.c_str(), requestStr.length())) < 0) {
 		PERR(("tls_write: %s", tls_error(ctx)));
     return 7;
   }
 
-  if (flag_printRequest) printf("sent message (%ld):\n%s\n", writelen, request.c_str());
 
 	/*
 	** read response - headers and body
@@ -212,23 +197,17 @@ int main(int argc, char *argv[])
 {
 	if (argc < 2) { printf("usage: %s url\n\n", argv[0]); return 1; }
 
-	char url[1024];
-  strcpy(url, argv[1]);  // make a copy since OCSP_parse_url url param is not const
-  char *host=NULL;
-  char *portstr=NULL;
-  char *path=NULL;
-  int isHttps = 0;
-
-  // Need host and path from URL
-
-  if (1 != OCSP_parse_url(url, &host, &portstr, &path, &isHttps)) {
+  const char *url = argv[1];
+  HttpRequest request = HttpRequest(url);
+  if (request.host.length() == 0) {
     printf("Failed to parse URL:%s\n", url);
     return 2;
   }
-
   HttpResponse response = HttpResponse();
 
-  if (httpSend(std::string(host), std::string(path), std::string(portstr), "GET", "", response)) {
+  request.customHeaders.push_back(HttpHeader("User-Agent",USER_AGENT));
+
+  if (httpSend(request, response)) {
     printf("request failed\n");
     return 3;
   }
