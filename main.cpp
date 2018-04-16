@@ -6,27 +6,29 @@
  * https://gist.github.com/kinichiro/9ac1f6768d490bb3d9828e9ffac7d098
  */
 
+#include <err.h>
 #include <stdio.h>
 #include <string.h>
-#include <err.h>
 
 #include <tls.h>
 
 #include "http.h"
 
-const char * USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36";
+const char *USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/65.0.3325.181 Safari/537.36";
 bool flag_printResponseHeaders = false;
 bool flag_printRequest = false;
 
 #ifndef NDEBUG
-#define PERR(A) warn A ;
+#define PERR(A) warn A;
 #else
 #define PERR(A)
 #endif
 
 const char pinnedCertsPEM[] =
-// DigiCert Global Root CA (badssl.com)
-"-----BEGIN CERTIFICATE-----\n\
+    // DigiCert Global Root CA (badssl.com)
+    "-----BEGIN CERTIFICATE-----\n\
 MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\n\
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n\
 d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD\n\
@@ -48,8 +50,8 @@ PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls\n\
 YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk\n\
 CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=\n\
 -----END CERTIFICATE-----\n"
-// GeoTrust Global CA (google.com)
-"-----BEGIN CERTIFICATE-----\n\
+    // GeoTrust Global CA (google.com)
+    "-----BEGIN CERTIFICATE-----\n\
 MIIDVDCCAjygAwIBAgIDAjRWMA0GCSqGSIb3DQEBBQUAMEIxCzAJBgNVBAYTAlVT\n\
 MRYwFAYDVQQKEw1HZW9UcnVzdCBJbmMuMRswGQYDVQQDExJHZW9UcnVzdCBHbG9i\n\
 YWwgQ0EwHhcNMDIwNTIxMDQwMDAwWhcNMjIwNTIxMDQwMDAwWjBCMQswCQYDVQQG\n\
@@ -69,7 +71,7 @@ PseKUgzbFbS9bZvlxrFUaKnjaZC2mqUPuLk/IH2uSrW4nOQdtqvmlKXBx4Ot2/Un\n\
 hw4EbNX/3aBd7YdStysVAq45pmp06drE57xNNB6pXE0zX5IJL4hmXXeXxx12E6nV\n\
 5fEWCRE11azbJHFwLJhWC9kXtNHjUStedejV0NxPNO3CBWaAocvmMw==\n\
 -----END CERTIFICATE-----\n"
-/* You can comment out individual entries like this...
+    /* You can comment out individual entries like this...
 // GlobalSign Root CA (wikipedia.org)
 "-----BEGIN CERTIFICATE-----\n\
 MIIDXzCCAkegAwIBAgILBAAAAAABIVhTCKIwDQYJKoZIhvcNAQELBQAwTDEgMB4G\n\
@@ -97,121 +99,137 @@ WD9f\n\
 /**
  *
  */
-int httpSend(HttpRequest &request, HttpResponse &response, const char *pemBundleString, unsigned int pemBundleLength)
-{
-	struct tls_config *cfg = NULL;
-	struct tls *ctx = NULL;
-	ssize_t writelen;
-  HttpReader* httpReader = HttpReaderNew(response);
+int httpSend(HttpRequest &request, HttpResponse &response,
+             const char *pemBundleString, unsigned int pemBundleLength) {
+  struct tls_config *cfg = NULL;
+  struct tls *ctx = NULL;
+  ssize_t writelen;
+  HttpReader *httpReader = HttpReaderNew(response);
 
-	/*
-	** initialize libtls
-	*/
+  /*
+  ** initialize libtls
+  */
 
-	if (tls_init() != 0) {
-		PERR(("tls_init:"));
+  if (tls_init() != 0) {
+    PERR(("tls_init:"));
     return 1;
   }
 
-	/*
-	** configure libtls
-	*/
+  /*
+  ** configure libtls
+  */
 
-	if ((cfg = tls_config_new()) == NULL) {
-		PERR(("tls_config_new:"));
+  if ((cfg = tls_config_new()) == NULL) {
+    PERR(("tls_config_new:"));
     return 2;
   }
 
-	/* set root certificate (CA) */
-	if (tls_config_set_ca_mem(cfg, (const uint8_t*)pemBundleString, pemBundleLength) != 0) {
-		PERR(("tls_config_set_ca_mem:"));
+  /* set root certificate (CA) */
+  if (tls_config_set_ca_mem(cfg, (const uint8_t *)pemBundleString,
+                            pemBundleLength) != 0) {
+    PERR(("tls_config_set_ca_mem:"));
     return 3;
   }
 
-	/*
-	** initiate client context
-	*/
+  /*
+  ** initiate client context
+  */
 
-	if ((ctx = tls_client()) == NULL) {
-		PERR(("tls_client:"));
+  if ((ctx = tls_client()) == NULL) {
+    PERR(("tls_client:"));
     return 4;
   }
 
-	/*
-	** apply config to context
-	*/
+  /*
+  ** apply config to context
+  */
 
-	if (tls_configure(ctx, cfg) != 0) {
-		PERR(("tls_configure: %s", tls_error(ctx)));
+  if (tls_configure(ctx, cfg) != 0) {
+    PERR(("tls_configure: %s", tls_error(ctx)));
     return 5;
   }
 
-	/*
-	** connect to server
-	*/
+  /*
+  ** connect to server
+  */
 
-	if (tls_connect(ctx, request.host.c_str(), (request.portstr.length() == 0 ? "443" : request.portstr.c_str())) != 0) {
-		PERR(("tls_connect: %s", tls_error(ctx)));
+  if (tls_connect(
+          ctx, request.host.c_str(),
+          (request.portstr.length() == 0 ? "443" : request.portstr.c_str())) !=
+      0) {
+    PERR(("tls_connect: %s", tls_error(ctx)));
     return 6;
   }
 
-	/*
-	** send message to server
-	*/
+  /*
+  ** send message to server
+  */
 
   std::string requestStr = request.generate();
 
-  if (flag_printRequest) printf("sending\n%s\n", requestStr.c_str());
+  if (flag_printRequest)
+    printf("sending\n%s\n", requestStr.c_str());
 
-  if((writelen = tls_write(ctx, requestStr.c_str(), requestStr.length())) < 0) {
-		PERR(("tls_write: %s", tls_error(ctx)));
+  if ((writelen = tls_write(ctx, requestStr.c_str(), requestStr.length())) <
+      0) {
+    PERR(("tls_write: %s", tls_error(ctx)));
     return 7;
   }
 
-
-	/*
-	** read response - headers and body
-	*/
+  /*
+  ** read response - headers and body
+  */
 
   char readbuf[8192];
-	size_t readlen;
-	while ((readlen = tls_read(ctx, readbuf, sizeof(readbuf)-1)) > 0) {
-		readbuf[readlen] = 0;
+  size_t readlen;
+  while ((readlen = tls_read(ctx, readbuf, sizeof(readbuf) - 1)) > 0) {
+    readbuf[readlen] = 0;
 
     httpReader->onBuffer(readbuf, readlen, sizeof(readbuf));
-    if (httpReader->isFinished()) break;
-	}
+    if (httpReader->isFinished())
+      break;
+  }
   delete httpReader;
 
-	// clean up
+  // clean up
 
-	if (tls_close(ctx) != 0)
-		err(1, "tls_close: %s", tls_error(ctx));
-	tls_free(ctx);
-	tls_config_free(cfg);
+  if (tls_close(ctx) != 0)
+    err(1, "tls_close: %s", tls_error(ctx));
+  tls_free(ctx);
+  tls_config_free(cfg);
 
-	return(0);
+  return (0);
 }
 
-int read_text_file(const std::string path, std::string &dest)
-{
+/**
+ * @brief Simple function to read a small text file into 'dest' param.
+ * @returns 0 on success, -1 otherwise.
+ */
+int read_text_file(const std::string path, std::string &dest) {
   char achLine[2048];
-  FILE* pf = fopen ( path.c_str(), "rt");
-  if ( NULL == pf ) return -1;
-  
-  while ( ! feof ( pf ) ) {
-    char* pstr = fgets ( achLine, sizeof(achLine), pf );
+  FILE *pf = fopen(path.c_str(), "rt");
+  if (NULL == pf)
+    return -1;
+
+  while (!feof(pf)) {
+    char *pstr = fgets(achLine, sizeof(achLine), pf);
     if (pstr != NULL)
       dest.append(pstr);
   }
-  
+
   fclose(pf);
   return 0;
 }
 
-int main(int argc, char *argv[])
-{
-	if (argc < 2) { printf("usage: %s url <optional/path/to/cabundle.pem>\n\n", argv[0]); return 1; }
+
+/**
+ * main
+ */
+int main(int argc, char *argv[]) {
+  if (argc < 2) {
+    printf("usage: %s url <optional/path/to/cabundle.pem>\n\n", argv[0]);
+    return 1;
+  }
 
   const char *url = argv[1];
   HttpRequest request = HttpRequest(url);
@@ -242,18 +260,21 @@ int main(int argc, char *argv[])
 
   HttpResponse response = HttpResponse();
 
-  request.customHeaders.push_back(HttpHeader("User-Agent",USER_AGENT));
+  request.customHeaders.push_back(HttpHeader("User-Agent", USER_AGENT));
 
   if (httpSend(request, response, pemBundleString, pemBundleLength)) {
     printf("request failed\n");
     return 3;
   }
 
-  printf("success\n statusCode:%d headers:%lu response:%lu bytes\n", response.statusCode, response.headers.size(), response.body.length());
+  printf("success\n statusCode:%d headers:%lu response:%lu bytes\n",
+         response.statusCode, response.headers.size(), response.body.length());
 
   if (flag_printResponseHeaders) {
     printf("Response Headers:\n");
-    for (auto hdr : response.headers) { printf("%s:%s\n", hdr.name.c_str(), hdr.value.c_str()); }
+    for (auto hdr : response.headers) {
+      printf("%s:%s\n", hdr.name.c_str(), hdr.value.c_str());
+    }
   }
 
   return 0;

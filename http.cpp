@@ -5,31 +5,37 @@
 
 #include "http.h"
 
-void parseHeaders(const std::string &str, size_t &contentLength, std::vector<HttpHeader> &hdrs, int &statusCode);
+void parseHeaders(const std::string &str, size_t &contentLength,
+                  std::vector<HttpHeader> &hdrs, int &statusCode);
+/**
+ * @brief Constructor - parses URL and initializes members.
+ */
+HttpRequest::HttpRequest(const char *purl)
+    : url(purl), host(), portstr(), path(), isHttps(false), method("GET"),
+      postData(), customHeaders() {
 
-
-HttpRequest::HttpRequest(const char *purl) : url(purl), host(), portstr(), path(), isHttps(false), method("GET"), postData(), customHeaders()
-{
-//  char tmpurl[1024];
-//  strcpy(tmpurl, argv[1]);  // make a copy since OCSP_parse_url url param is not const
-  char *_host=NULL;
-  char *_portstr=NULL;
-  char *_path=NULL;
+  char *_host = NULL;
+  char *_portstr = NULL;
+  char *_path = NULL;
   int _isHttps = 0;
-  
-  if (1 != OCSP_parse_url((char *)url.c_str(), &_host, &_portstr, &_path, &_isHttps)) {
-    //printf("Failed to parse URL:%s\n", url);
+
+  if (1 != OCSP_parse_url((char *)url.c_str(), &_host, &_portstr, &_path,
+                          &_isHttps)) {
+    // printf("Failed to parse URL:%s\n", url);
     return;
   }
-  
+
   host = std::string(_host);
   portstr = std::string(_portstr);
   path = std::string(_path);
   isHttps = isHttps != 0;
 }
 
-const std::string HttpRequest::generate()
-{
+/**
+ * @brief Builds and returns the HTTP request string based
+ * on member field values.
+ */
+const std::string HttpRequest::generate() {
   std::string request = method + std::string(" ");
   request += path;
   request += " HTTP/1.1\r\n";
@@ -50,60 +56,99 @@ const std::string HttpRequest::generate()
   return request;
 }
 
+/**
+ * Implementation of HttpReader interface.
+ */
 class HttpReaderImpl : public HttpReader {
 public:
-  HttpReaderImpl(HttpResponse& resp) : _response(resp), _haveHeaders(false), _respHeaderBuffer(), _contentLength(0), _bodyReadLen(0), _isFinished(false) { }
+  HttpReaderImpl(HttpResponse &resp)
+      : _response(resp), _haveHeaders(false), _respHeaderBuffer(),
+        _contentLength(0), _bodyReadLen(0), _isFinished(false) {}
 
   /*
-   * Receive buffer from transport.  Assume headers, followed by body.
+   * Receive buffer from transport.
+   * Keeps state in _haveHeaders, _bodyReadLen, _isFinished.
    */
-  virtual void onBuffer(const char *readbuf, size_t readlen, size_t buflen) override
-  {
+  virtual void onBuffer(const char *readbuf, size_t readlen,
+                        size_t buflen) override {
     if (!_haveHeaders) {
+
+      // look for end of header marker : 2 newlines
+
       const char *pos = strstr(readbuf, "\r\n\r\n");
-      if (pos == 0L) pos = strstr(readbuf, "\n\n");
+      if (pos == 0L)
+        pos = strstr(readbuf, "\n\n");
 
       if (pos == 0L) {
+
+        // no end marker, append this buffer to internal header buffer
+
         _respHeaderBuffer += readbuf;
         return;
+
       } else {
+
+        // we found the end of header marker
+
         _respHeaderBuffer += std::string(readbuf, pos);
         _haveHeaders = true;
 
-        parseHeaders(_respHeaderBuffer, _contentLength, _response.headers, _response.statusCode);
+        parseHeaders(_respHeaderBuffer, _contentLength, _response.headers,
+                     _response.statusCode);
 
-        while (*pos == '\r' || *pos == '\n') pos++;
+        // move to start of body
+
+        while (*pos == '\r' || *pos == '\n')
+          pos++;
+
+        // append to internal body buffer
+
         _bodyReadLen += strlen(pos);
         _response.body += std::string(pos);
       }
     } else {
+
+      // append to internal body buffer
+
       _bodyReadLen += strlen(readbuf);
       _response.body += readbuf;
     }
-    if (_contentLength == 0 && readlen < sizeof(readbuf)-1) _isFinished = true;
-    if (_contentLength > 0 && _bodyReadLen >= _contentLength) _isFinished = true;
+
+    // if readlen < size of buffer, assume finished
+
+    if (_contentLength == 0 && readlen < sizeof(readbuf) - 1)
+      _isFinished = true;
+
+    // if read contentLength bytes, assume finished
+
+    if (_contentLength > 0 && _bodyReadLen >= _contentLength)
+      _isFinished = true;
   }
 
   virtual bool isFinished() override { return _isFinished; }
 
 private:
-  HttpResponse& _response;
-  bool          _haveHeaders;
-  std::string   _respHeaderBuffer;
-  size_t        _contentLength;
-  size_t        _bodyReadLen;
-  bool          _isFinished;
+  HttpResponse &_response;
+  bool _haveHeaders;
+  std::string _respHeaderBuffer;
+  size_t _contentLength;
+  size_t _bodyReadLen;
+  bool _isFinished;
 };
 
-HttpReader* HttpReaderNew(HttpResponse& dest) { return new HttpReaderImpl(dest); }
+HttpReader *HttpReaderNew(HttpResponse &dest) {
+  return new HttpReaderImpl(dest);
+}
 
-std::vector<std::string> split(const std::string &subject, char delim)
-{
+/**
+ * Simple string split()
+ */
+std::vector<std::string> split(const std::string &subject, char delim) {
   std::vector<std::string> retval = std::vector<std::string>();
   std::istringstream f(subject);
   std::string s;
 
-  while(getline(f,s, delim)) {
+  while (getline(f, s, delim)) {
     retval.push_back(s);
   }
   return retval;
@@ -113,15 +158,16 @@ std::vector<std::string> split(const std::string &subject, char delim)
  * Parses HTTP headers found in str.
  * Places each header found into hdrs vector.
  * Puts header line into a '_status' header and adds to hdrs.
- * If "Content-Length" header is found, parses value and sets contentLength param
+ * If "Content-Length" header is found, parses value and sets contentLength
+ * param
  */
-void parseHeaders(const std::string &str, size_t &contentLength, std::vector<HttpHeader> &hdrs, int &statusCode)
-{
+void parseHeaders(const std::string &str, size_t &contentLength,
+                  std::vector<HttpHeader> &hdrs, int &statusCode) {
   auto lines = split(str, '\n');
-  int i=-1;
+  int i = -1;
   for (auto line : lines) {
     i++;
-    //printf("HEADER:%s\n", line.c_str());
+    // printf("HEADER:%s\n", line.c_str());
 
     // TODO: trim \r
 
